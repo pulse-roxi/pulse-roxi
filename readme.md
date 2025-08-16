@@ -74,30 +74,37 @@ To analyze specific frame(s) within a trial, or the summary of RR estimations fo
 from ppg2rr.rr_est import estimate_rr
 from ppg2rr.config import AlgorithmParams
 
-dataset = 'kapiolani'
+dataset = '3ps'
 trial = 52
-# frame_num = None # analyse all frames in a trial
-frame_num=[4] # specify the frames you want to analyze
+frame_num = None # analyse all frames in a trial
+# frame_num=[4] # specify the frames you want to analyze
+
+window_size=30
+window_increment=5
 
 params = AlgorithmParams(
     dataset=dataset,
-    probe=1,
-    remove_riv_outliers="segment-wise"
-    )
-(
-    frame_data,
-    rr_candidate_merged_list,
-    all_rr_candidates_list,
-    feature_quality_list,
-    meta,
-) = estimate_rr(
-    trial_num=trial,
-    frame_num=frame_num,
-    params=params,
+    probe=1,                        # For Kapiolani
+    probe_type="Tr",                # For 3ps, "Tr" or "Re"
+    led_num=1,                      # For 3ps, 1 or 2
+    window_size=window_size,
+    window_increment=window_increment,
+)
+file_suffix=f'all-sessions'
+
+df, rr_candidates, quality_indices, _, per_trial_df = estimate_rr_dataset(
     dataset=dataset,
-    show=True,
+    trials=trials, 
+    params=params,
+    save_df=True,
+    show=False, 
+    fig_large=False,
     save_fig=False,
-    rr_seed=10,
+    save_psd_fig=False,
+    save_frame_psd_figs=False,
+    file_suffix=file_suffix,
+    show_rr_candidates=True,
+    stop_on_error=False,
 )
 ```
 
