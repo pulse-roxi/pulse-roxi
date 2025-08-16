@@ -1,5 +1,10 @@
-# PULSEOX_PUBALGS: PPG to RR estimation
-Estimate Heart Rate and Resp Rate (RR) for a photoplethysmography (PPG) waveform.
+# PULSE ROXI: PPG to RR estimation
+Estimate Heart Rate and Respiratory Rate (RR) for a photoplethysmography (PPG) waveform.
+
+This repo is a copy created in August 2025 at the conclusion of the project. At that time, the algorithm had been evaluated using the 509 sessions of the 3Ps dataset.
+
+This readme was created more than a year earlier by previous contributors to the project, before the 3Ps study. Parts of this readme are out of date but most of it is still applicable.
+
 
 **Table of Contents**
 - [PULSEOX\_PUBALGS: PPG to RR estimation](#pulseox_pubalgs-ppg-to-rr-estimation)
