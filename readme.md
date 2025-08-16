@@ -158,33 +158,14 @@ df, rr_candidates, quality_indices = estimate_rr_dataset(
 If `save_df = True`, then the results are saved to a `.csv` file in `data/results`. See the [output data dictionary](https://github.com/new-horizons/pulseox_pubalgs/wiki/Algorithm-output-Data-Dictionary) for more details.
 
 # Datasets for evaluation
-[Synthetic dataset](https://egnyte.nhgh.org/app/index.do#storage/files/1/Shared/Projects/Pediatric%20Pulse%20ROxi/alg%20development/pulseox_pubalgs_data) ("synthetic"): Created by adding amplitude, frequency, or baseline modulation to simulated waveforms. Originally by [Peter Charlton (2016)](https://peterhcharlton.github.io/RRest/synthetic_dataset.html).
+[3Ps]The 3Ps In Vivo dataset contains a 3-min recording for each of 509 participants aged less than 5 years. Data were collected at three secondary institutions across three Nigerian sites in the states of Kano, Abuja, and Lagos. The dataset was collected as part of the project that developed this algorithm.
 
-[Kapiolani](https://egnyte.nhgh.org/app/index.do#storage/files/1/Shared/Projects/Pediatric%20Pulse%20ROxi/Pediatric%20Observational%20Study/Kapiolani%20format-corrected%20data) ("kapiolani"): Collected from pediatric patients under five year old during clinical visits. They're awake and sometimes are calm, but sometimes they may be moving about or crying.
-
-[Capnobase](https://egnyte.nhgh.org/app/index.do#storage/files/1/Shared/Projects/Pediatric%20Pulse%20ROxi/Published%20data/Capnobase) ("capnobase"): Data is collected in patients under anesthesia during elective surgery. There are around 5 kids under 5 y.o. in this dataset. More details [here](https://peterhcharlton.github.io/RRest/capnobase_dataset.html).
+[Capnobase]("capnobase"): Data is collected in patients under anesthesia during elective surgery. There are around 5 kids under 5 y.o. in this dataset. More details [here](https://peterhcharlton.github.io/RRest/capnobase_dataset.html).
 
 [MIMIC-II](https://peterhcharlton.github.io/RRest/mimicii_dataset.html) ("mimic"): can be downloaded on [physionet](https://physionet.org/content/bidmc/1.0.0/). Simultaneous ECG, PPG and impedance pneumography respiratory signals acquired from intensive care patients. More details [here](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC3124312/). There are no children in this dataset, and all subjects have normal breathing rates (between 5 and 25)
 
 [BIDMC Dataset](https://peterhcharlton.github.io/RRest/bidmc_dataset.html): Simultaneous ECG, PPG and thoracic impedance signals recorded from critically-ill patients. The algorithm has not been evaluated with this dataset.
 
-# Bench Data
-Bench data was collected to evaluate hardware during development of the V0 system prior to the Nigeria study. They can be found on [Egnyte](https://egnyte.nhgh.org/app/index.do#storage/files/1/Shared/Projects/Pediatric%20Pulse%20ROxi/alg%20development/pulseox_pubalgs_data/bench).
-
-# Current Performance
-See the [wiki](https://github.com/new-horizons/pulseox_pubalgs/wiki)
-
-# Known performance/generalization issues
-The Capnobase and MIMIC datasets have relatively "clean" data. The PPG spectra often contains a peak at the expected RR as well as harmonics of that frequency. For the most part, the harmonic analysis method can successfully pick out the fundamental RR frequency in these datasets. But the counting methods almost always estimates the harmonic frequencies. Note that the majority of patients in these datasets are adults.
-
-In the Kapiolani dataset, the PPG spectra is less clean, and the counting methods often perform better than the spectral methods.
-
-# In Development
-TODO: Create a database combining Kapiolani, Capnobase, MIMIC, and other datasets for further development and evaluation.
-
-TODO: Initialize RR_seed with a lookup table, based on the age of the patient.
-
-TODO: Further improve the harmonic analysis method using examples from the MIMIC dataset.
 
 # References
 The algorithm is inspired by the following papers:
