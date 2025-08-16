@@ -1,5 +1,10 @@
-# PULSEOX_PUBALGS: PPG to RR estimation
-Estimate Heart Rate and Resp Rate (RR) for a photoplethysmography (PPG) waveform.
+# PULSE ROXI: PPG to RR estimation
+Estimate Heart Rate and Respiratory Rate (RR) for a photoplethysmography (PPG) waveform.
+
+This repo is a copy created in August 2025 at the conclusion of the project. At that time, the algorithm had been evaluated using the 509 sessions of the 3Ps dataset.
+
+This readme was created more than a year earlier by previous contributors to the project, before the 3Ps study. Parts of this readme are out of date but most of it is still applicable.
+
 
 **Table of Contents**
 - [PULSEOX\_PUBALGS: PPG to RR estimation](#pulseox_pubalgs-ppg-to-rr-estimation)
@@ -69,30 +74,37 @@ To analyze specific frame(s) within a trial, or the summary of RR estimations fo
 from ppg2rr.rr_est import estimate_rr
 from ppg2rr.config import AlgorithmParams
 
-dataset = 'kapiolani'
+dataset = '3ps'
 trial = 52
-# frame_num = None # analyse all frames in a trial
-frame_num=[4] # specify the frames you want to analyze
+frame_num = None # analyse all frames in a trial
+# frame_num=[4] # specify the frames you want to analyze
+
+window_size=30
+window_increment=5
 
 params = AlgorithmParams(
     dataset=dataset,
-    probe=1,
-    remove_riv_outliers="segment-wise"
-    )
-(
-    frame_data,
-    rr_candidate_merged_list,
-    all_rr_candidates_list,
-    feature_quality_list,
-    meta,
-) = estimate_rr(
-    trial_num=trial,
-    frame_num=frame_num,
-    params=params,
+    probe=1,                        # For Kapiolani
+    probe_type="Tr",                # For 3ps, "Tr" or "Re"
+    led_num=1,                      # For 3ps, 1 or 2
+    window_size=window_size,
+    window_increment=window_increment,
+)
+file_suffix=f'all-sessions'
+
+df, rr_candidates, quality_indices, _, per_trial_df = estimate_rr_dataset(
     dataset=dataset,
-    show=True,
+    trials=trials, 
+    params=params,
+    save_df=True,
+    show=False, 
+    fig_large=False,
     save_fig=False,
-    rr_seed=10,
+    save_psd_fig=False,
+    save_frame_psd_figs=False,
+    file_suffix=file_suffix,
+    show_rr_candidates=True,
+    stop_on_error=False,
 )
 ```
 
@@ -153,33 +165,14 @@ df, rr_candidates, quality_indices = estimate_rr_dataset(
 If `save_df = True`, then the results are saved to a `.csv` file in `data/results`. See the [output data dictionary](https://github.com/new-horizons/pulseox_pubalgs/wiki/Algorithm-output-Data-Dictionary) for more details.
 
 # Datasets for evaluation
-[Synthetic dataset](https://egnyte.nhgh.org/app/index.do#storage/files/1/Shared/Projects/Pediatric%20Pulse%20ROxi/alg%20development/pulseox_pubalgs_data) ("synthetic"): Created by adding amplitude, frequency, or baseline modulation to simulated waveforms. Originally by [Peter Charlton (2016)](https://peterhcharlton.github.io/RRest/synthetic_dataset.html).
+[3Ps]The 3Ps In Vivo dataset contains a 3-min recording for each of 509 participants aged less than 5 years. Data were collected at three secondary institutions across three Nigerian sites in the states of Kano, Abuja, and Lagos. The dataset was collected as part of the project that developed this algorithm.
 
-[Kapiolani](https://egnyte.nhgh.org/app/index.do#storage/files/1/Shared/Projects/Pediatric%20Pulse%20ROxi/Pediatric%20Observational%20Study/Kapiolani%20format-corrected%20data) ("kapiolani"): Collected from pediatric patients under five year old during clinical visits. They're awake and sometimes are calm, but sometimes they may be moving about or crying.
-
-[Capnobase](https://egnyte.nhgh.org/app/index.do#storage/files/1/Shared/Projects/Pediatric%20Pulse%20ROxi/Published%20data/Capnobase) ("capnobase"): Data is collected in patients under anesthesia during elective surgery. There are around 5 kids under 5 y.o. in this dataset. More details [here](https://peterhcharlton.github.io/RRest/capnobase_dataset.html).
+[Capnobase]("capnobase"): Data is collected in patients under anesthesia during elective surgery. There are around 5 kids under 5 y.o. in this dataset. More details [here](https://peterhcharlton.github.io/RRest/capnobase_dataset.html).
 
 [MIMIC-II](https://peterhcharlton.github.io/RRest/mimicii_dataset.html) ("mimic"): can be downloaded on [physionet](https://physionet.org/content/bidmc/1.0.0/). Simultaneous ECG, PPG and impedance pneumography respiratory signals acquired from intensive care patients. More details [here](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC3124312/). There are no children in this dataset, and all subjects have normal breathing rates (between 5 and 25)
 
 [BIDMC Dataset](https://peterhcharlton.github.io/RRest/bidmc_dataset.html): Simultaneous ECG, PPG and thoracic impedance signals recorded from critically-ill patients. The algorithm has not been evaluated with this dataset.
 
-# Bench Data
-Bench data was collected to evaluate hardware during development of the V0 system prior to the Nigeria study. They can be found on [Egnyte](https://egnyte.nhgh.org/app/index.do#storage/files/1/Shared/Projects/Pediatric%20Pulse%20ROxi/alg%20development/pulseox_pubalgs_data/bench).
-
-# Current Performance
-See the [wiki](https://github.com/new-horizons/pulseox_pubalgs/wiki)
-
-# Known performance/generalization issues
-The Capnobase and MIMIC datasets have relatively "clean" data. The PPG spectra often contains a peak at the expected RR as well as harmonics of that frequency. For the most part, the harmonic analysis method can successfully pick out the fundamental RR frequency in these datasets. But the counting methods almost always estimates the harmonic frequencies. Note that the majority of patients in these datasets are adults.
-
-In the Kapiolani dataset, the PPG spectra is less clean, and the counting methods often perform better than the spectral methods.
-
-# In Development
-TODO: Create a database combining Kapiolani, Capnobase, MIMIC, and other datasets for further development and evaluation.
-
-TODO: Initialize RR_seed with a lookup table, based on the age of the patient.
-
-TODO: Further improve the harmonic analysis method using examples from the MIMIC dataset.
 
 # References
 The algorithm is inspired by the following papers:
