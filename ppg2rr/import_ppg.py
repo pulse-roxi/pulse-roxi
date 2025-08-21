@@ -446,25 +446,23 @@ def load_ppg_data(
             for d in sorted(os.listdir(dataset_primary_dir))
             if (os.path.isdir(os.path.join(dataset_primary_dir, d)) and d[0] == "N" and len(d) == 7)    # A trial looks like Nxx-yyy, e.g. N07-003
         ]
-        this_pt_dir = pjoin(dataset_primary_dir, patient_dirs[trial])                   # A few data files live here
-        sub_dirs = sorted([d for d in os.listdir(this_pt_dir) if os.path.isdir(pjoin(this_pt_dir, d))])
-        subtrial_dir = sub_dirs[-1]              # Use the highest-numbered subtrial (ignore any earlier subtrials)
-        # if subtrial_dir != '1':
-        #     util.newprint(f"    {patient_dirs[trial]}: using subtrial {subtrial_dir}", on_a_new_line=True)
-        this_pt_sensor_dir = pjoin(this_pt_dir, subtrial_dir, "per_sensor")     # The other data files live here
+        if not patient_dirs:
+            raise ValueError(f"load_ppg_data(): did not find any patient dirs in {dataset_primary_dir}.")
+        if trial >= len(patient_dirs):
+            raise ValueError(f"load_ppg_data(): trial {trial} is out of range for {len(patient_dirs)} trials in {dataset_primary_dir}.")
+
+        this_pt_dir = pjoin(dataset_primary_dir, patient_dirs[trial])
 
         # --- PPG probes
         if params.probe_type == "Tr":
-            pleth_filename = "TrProbe.csv"
+            pleth_filename = "transmissive_probe.csv"
         elif params.probe_type == "Re":
-            pleth_filename = "RefProbe.csv"
-        pleth_df = pd.read_csv(pjoin(this_pt_sensor_dir, pleth_filename))
+            pleth_filename = "reflective_probe.csv"
+        pleth_df = pd.read_csv(pjoin(this_pt_dir, pleth_filename))
 
-        # For all time sync, we use the first system_time (UTC UNIX time, added by the capturing PC)
-        # as zero. The MCU t zero varies between signals.
-        t_zero = pleth_df.at[0, "system_time"]
-        duration = pleth_df["system_time"].iloc[-1] - t_zero
-        fs_ppg = (len(pleth_df["system_time"]) - 1) / duration
+        # Time in the cleaned up dataset is normalized to 0.
+        duration = pleth_df["time_s"].iloc[-1] - pleth_df.at[0, "time_s"]
+        fs_ppg = (len(pleth_df["time_s"]) - 1) / duration
         if abs(fs_ppg - 500) >= 2:
             warnings.warn(f"load_ppg_data(): For 3ps, fs_ppg is expected to be 500 Hz but was determined to be {fs_ppg:0.2f} Hz, a discrepancy over the {duration:0.1f} s trial of {duration * (500-fs_ppg)/500:0.2f} s.")
         fs_ppg = 500        # Since we've seen errors in system_time, it seems better to assume the nominal rate rather than use the reported actual
@@ -475,11 +473,10 @@ def load_ppg_data(
             if len(pleth_df) > index_limit:
                 pleth_df = pleth_df[pleth_df.index < index_limit]
 
-        # This PPG signal seems inverted, which we correct. And its DELTA does not properly handle
-        # rollover. That only happens when the probe falls off or something else goes wrong, but
-        # that disturbs some of our calculations for the entire sessions, so we calculate the delta
-        # here, where rollover doesn't occur.
-        ppg_raw = -(pleth_df[f"LED{params.led_num}VAL"] - pleth_df[f"ALED{params.led_num}VAL"])
+        if params.led_num == 1:
+            ppg_raw = pleth_df["ir"]
+        else:
+            ppg_raw = pleth_df["red"]
 
         # Optionally check for extreme PPG values, though with our calculation of ppg_raw above,
         # this shouldn't matter anymore.
@@ -514,73 +511,54 @@ def load_ppg_data(
         )
 
         # --- Breath annotations: live at the clinic
-        column_names = ["system_time", "device", "fw_version", "t", "key_down"]
-        annot_live_df = pd.read_csv(pjoin(this_pt_sensor_dir, "a.txt"), names=column_names, header=None)
-        annot_live_df["system_time"] -= t_zero
-        
-        # The live annotater may press the restart button. If so, ignore all earlier breath marks.
-        annot_live_restarts_filename = pjoin(this_pt_dir, "annotation_restarts.txt")
-        if os.path.exists(annot_live_restarts_filename):
-            column_names = ["system_time"]
-            annot_live_restarts_df = pd.read_csv(pjoin(this_pt_dir, "annotation_restarts.txt"), names=column_names, header=None)
-            annot_live_restarts_df["system_time"] -= t_zero
-            if len(annot_live_restarts_df) > 0:
-                restart_time = annot_live_restarts_df["system_time"].iloc[-1]
-                annot_live_df = annot_live_df[annot_live_df["system_time"] >= restart_time]
-
-        # 0: unpressed. 1: pressed. Find rising edges. (We assume this signal was debounced, as it
-        # appeared in an example file.)
-        diff = np.diff(annot_live_df["key_down"])
-        if len(diff) == 0:
+        annot_live_df = pd.read_csv(pjoin(this_pt_dir, "real_time_breath_annotations.csv"))
+        if len(annot_live_df) == 0:
             warnings.warn(f"load_ppg_data(): No breaths were annotated live; the button was not pressed.")
             ref["annot live"]["breaths"]["x"] = None
             ref["annot live"]["breaths"]["y"] = None
         else:
-            ref["annot live"]["x"] = (annot_live_df["system_time"][1:][diff > 0]).to_numpy()
+            ref["annot live"]["x"] = annot_live_df["time_s"].to_numpy()
             # Since this dataset has no capnography-like reference signal, for y values we use the
             # running count of breaths.
             ref["annot live"]["y"] = np.arange(1, len(ref["annot live"]["x"]) + 1)
 
         # --- Breath annotations: afterwards by our panel of emergency physicians
-        # 
+        #
         # These marks are recorded in Adobe Premiere Pro and exported as one CSV file per panelist.
-        # Instantaneous marks signify breaths. 
-        # 
+        # Instantaneous marks signify breaths.
+        #
         # Markers with duration > 0 are used to record that the panelist was not able to mark
-        # breaths: 
+        # breaths:
         #
         #   - Markers named "uncertain" (case-insensitive and including anything "unsure" and
         #     anything else starting with "un") signify that just a portion was unmarkable. Often
         #     this is because the participant was moving too much.
-        # 
+        #
         #   - Markers named anything else signify that the entire session was unmarkable. Often this
         #     is because of the reason written in the marker name: "focus" or "framing". We asked
         #     the panelists to be consistent in those names, but the field accepts any text.
         #
-        # Unlike the other 3ps files, all breath CSVs are in one folder and contain the patient ID,
-        # rater name, and pass number, such as `N04-010 Daniel 1.csv`. There may be one or several
-        # passes.
-        
-        breath_dir = pjoin(dataset_dir, "breath marks")
-        breath_fns = glob.glob(f"{patient_dirs[trial]}*.csv", root_dir=breath_dir)
+        # All breath CSV files are found in the subject folder and are named "video_annotations_X_1st.csv",
+        # where X is panelist's identifier. There may be one or several passes ("1st", "2nd", etc.).
+
+        breath_fns = glob.glob(f"video_annotations_*.csv", root_dir=this_pt_dir)
         breath_fns.sort()
         if len(breath_fns) == 0:
             if "rr annot post" in params.reference_rr_signals:
                 util.newprint(f"    {patient_dirs[trial]}: No CSV files of panel-annotated breaths were found.", on_a_new_line=True)
             # This will lead to an error if these panel-marked breaths are the reference
         else:
-            breath_dfs = [pd.read_csv(pjoin(breath_dir, breath_fn)) for breath_fn in breath_fns]
+            breath_dfs = [pd.read_csv(pjoin(this_pt_dir, breath_fn)) for breath_fn in breath_fns]
             # For each breath-mark file
             for i, breath_df in enumerate(breath_dfs):
-                # Parse the filename
-                fn_stem, _ = splitext(breath_fns[i])
-                panelist_initial = fn_stem.split()[1][0:1]
-                if len(fn_stem.split()) == 2:                   # if no pass_num
-                    pass_num = "1"                              # use a default
-                else:
-                    pass_num = " ".join(fn_stem.split()[2:])    # the rest of the stem
+                # XXX: do this in cleanup.
+                # Parse the filename, e.g., "video_annotations_D_1st.csv".
+                match = re.match(r"video_annotations_(?P<initial>.)_(?P<pass_num>\d)\w*\.csv$", breath_fns[i])
+                panelist_initial = match["initial"]
+                pass_num = match["pass_num"]
+
                 ref_alias = ref["annot post"]["panelists"][panelist_initial]["passes"][pass_num]
-                
+
                 if panelist_initial == "D" and (patient_dirs[trial] in (f"N04-0{i}" for i in range(10,17))):
                     # For these trials, Dan's marks were recorded as the video played at 25 fps
                     # instead of the proper 30 fps, so we need to speed everything up.
@@ -878,26 +856,19 @@ def load_ppg_data(
             
         # --- Accelerometers on the selected probe and the chest
 
-        column_names = ["system_time", "device", "fw_version", "t", "significant_motion", "x", "y", "z"]
-
         for acc in ["acc probe", "acc chest"]:
             if acc == "acc probe":
                 if params.probe_type == "Tr":
-                    acc_filename = "ta1.txt"
-                elif params.probe_type == "Re":
-                    acc_filename = "ra1.txt"
-                acc_df = pd.read_csv(pjoin(this_pt_sensor_dir, acc_filename), names=column_names, header=None)
-            else:   # Chest probe
-                # "ta2.txt" was used until reworked boards were installed in March 2025. Since then, "ra2.txt" is used.
-                try:    
-                    acc_filename = "ta2.txt"        
-                    acc_df = pd.read_csv(pjoin(this_pt_sensor_dir, acc_filename), names=column_names, header=None)
-                except:
-                    acc_filename = "ra2.txt"        # on chest ("ta2.txt" was used until reworked boards were installed in March 2025)
-                    acc_df = pd.read_csv(pjoin(this_pt_sensor_dir, acc_filename), names=column_names, header=None)
+                    acc_filename = "transmissive_accel.csv"
+                else:
+                    assert params.probe_type == "Re"
+                    acc_filename = "reflective_accel.csv"
+            else:
+                acc_filename = "chest_accel.csv"
+            acc_df = pd.read_csv(pjoin(this_pt_dir, acc_filename))
 
             # Check for gaps and NaN, which have happened
-            acc_txyz_df = acc_df[["system_time", "x", "y", "z"]].copy()
+            acc_txyz_df = acc_df[["time_s", "x", "y", "z"]].copy()
             acc_prob_df = acc_txyz_df[acc_txyz_df.isna().any(axis=1)]   # only rows with NaN somewhere
             acc_prob_count = len(acc_prob_df)
             print_missing_acc = False
@@ -905,17 +876,8 @@ def load_ppg_data(
                 acc_count = len(acc_df)
                 util.newprint(f"    {patient_dirs[trial]}: Accelerometer file {acc_filename} contains {acc_prob_count} of {acc_count} rows ({acc_prob_count/acc_count:.1%}) with missing data. See `acc_prob_df`.", on_a_new_line=True)
 
-            # These rows are unevenly spaced in time, so we need to use each row's timestamp. The
-            # microcontroller's "t" is probably more reliable than the PC "system_time", which we use
-            # only for cross-file sync. (Inspection of one trial, N09-026, showed "system_time" to be
-            # as reliable as "t" within 1 ms, but "t" must be the safer choice.) "t" is in ms, which
-            # we convert to our normal s.
-
-            this_t_offset = acc_df["system_time"].iloc[0] - t_zero
-            if this_t_offset > 0.5:
-                util.newprint(f'    {patient_dirs[trial]}: {acc} time offset is large: {this_t_offset:.3f} s', on_a_new_line=True)
-            this_t_zero = acc_df["t"].iloc[0]/1000 + (acc_df["system_time"].iloc[0] - t_zero) 
-            ref[acc]["t"] = acc_df["t"]/1000 - this_t_zero
+            # Data has been cleaned up to use the microcontroller time ("t" in raw data").
+            ref[acc]["t"] = acc_df["time_s"]
             sum_squares = 0 * len(ref[acc]["t"])
             for axis in ["x", "y", "z"]:
                 # print(f"acc {axis} min, max: {min(acc_df[axis]):9d}, {max(acc_df[axis]):9d}")
@@ -960,11 +922,8 @@ def load_ppg_data(
         meta = {}
 
         meta["id"] = patient_dirs[trial]
-        t_zero_dt = datetime.fromtimestamp(t_zero, tz=timezone.utc)
-        t_zero_dt = t_zero_dt.astimezone(timezone(timedelta(hours=1)))            # Account for WAT, UTC +1
-        meta["local datetime"] = t_zero_dt.strftime("%Y-%m-%d %H:%M")
 
-        form_path = pjoin(this_pt_dir, "form.txt")
+        form_path = pjoin(this_pt_dir, "subject_metadata.txt")
         meta_from_file = {}
         if os.path.exists(form_path):
             with open(form_path, "r") as file:
@@ -1008,17 +967,6 @@ def load_ppg_data(
             meta["probe type"] = "reflective"
         meta["led num"] = params.led_num
         # meta["treatment_ventilation"] = "spontaneous"
-
-        # Probe calibration parameters that are automatically set at the beginning of each trial.
-        # The value should not change during the trial.
-        def meta_probe(probe_name: str):
-            meta[f"probe {probe_name}"]      = pleth_df[probe_name].iloc[0]
-            if (pleth_df[probe_name].nunique() > 1):
-                warnings.warn(f"load_ppg_data(): pleth_df['{probe_name}'].nunique() == {pleth_df[probe_name].nunique()} but should == 1")
-
-        meta_probe("TIAGAIN")
-        meta_probe("TIA_AMB_GAIN")
-        meta_probe("LEDCNTRL")
 
         return ppg_raw, fs_ppg, ref, meta
 
